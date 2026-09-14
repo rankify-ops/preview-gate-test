@@ -366,7 +366,7 @@ function Expired({ site, expiredCta }: { site: string; expiredCta?: Props["expir
           <dt className="pg-quote-total">Due today</dt>
           <dd className="pg-quote-total">
             {offer && <s>{aud(fullToday)}</s>}
-            {aud(offer ? offer.buildCents : fullToday)}
+            {aud(offer ? offer.buildCents + offer.hostingFirstYearCents : fullToday)}
           </dd>
         </dl>
       )}
