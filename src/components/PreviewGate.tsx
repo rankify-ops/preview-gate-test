@@ -191,7 +191,7 @@ function Lock({
   }
 
   const s = status.state;
-  const hours = status.hours ?? 24;
+  const hours = status.hours ?? 48;
 
   return (
     <div className="pg-overlay" role="dialog" aria-modal="true" aria-labelledby="pg-title">
@@ -234,7 +234,7 @@ function Lock({
                 <h2 id="pg-title" className="pg-h">Hey, Thomas from Rankify here. Your home page preview is ready!</h2>
                 <p className="pg-p">
                   Before you jump in: we build these previews for free, so each one is only open for{" "}
-                  <strong>{hours === 24 ? "24 hours" : formatHours(hours)}</strong>. The timer starts the moment you open it, so
+                  <strong>{formatHours(hours)}</strong>. The timer starts the moment you open it, so
                   pick a time when you can have a proper look.
                 </p>
                 <button className="pg-btn" onClick={() => setStep(1)} tabIndex={step === 0 ? 0 : -1}>
@@ -245,7 +245,7 @@ function Lock({
               <form className="pg-pane" onSubmit={start} aria-hidden={step !== 1}>
                 <div className="pg-label">Step 2 of 2</div>
                 <h2 className="pg-h">Confirm it&rsquo;s you.</h2>
-                <p className="pg-p">Enter the email address we sent your preview to, and your {hours === 24 ? "24 hours" : formatHours(hours)} will start.</p>
+                <p className="pg-p">Enter the email address we sent your preview to, and your {formatHours(hours)} will start.</p>
                 <input
                   ref={emailRef}
                   className="pg-input"
@@ -274,17 +274,37 @@ function Lock({
   );
 }
 
+type Quote = {
+  buildCents: number;
+  hostingCents: number;
+  now: string;
+  offer: { endsAt: string; buildCents: number; hostingFirstYearCents: number; savingCents: number } | null;
+};
+
 function Expired({ site, expiredCta }: { site: string; expiredCta?: Props["expiredCta"] }) {
-  const [quote, setQuote] = useState<{ buildCents: number; hostingCents: number } | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const skew = useRef(0);
 
-  useEffect(() => {
-    fetch(`${CHECKOUT_API}?site=${encodeURIComponent(site)}`)
+  const loadQuote = useCallback(() => {
+    fetch(`${CHECKOUT_API}?site=${encodeURIComponent(site)}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((q) => q && setQuote(q))
+      .then((q: Quote | null) => {
+        if (!q) return;
+        skew.current = new Date(q.now).getTime() - Date.now();
+        setQuote(q);
+      })
       .catch(() => {});
   }, [site]);
+
+  useEffect(loadQuote, [loadQuote]);
+
+  // When the offer runs out on screen, re-price from the server.
+  const offerMs = useRemaining(quote?.offer?.endsAt, skew);
+  useEffect(() => {
+    if (quote?.offer && offerMs === 0) loadQuote();
+  }, [offerMs, quote, loadQuote]);
 
   async function checkout() {
     setBusy(true);
@@ -304,26 +324,56 @@ function Expired({ site, expiredCta }: { site: string; expiredCta?: Props["expir
     }
   }
 
+  const offer = quote?.offer;
+  const fullToday = quote ? quote.buildCents + quote.hostingCents : 0;
+
   return (
     <div className="pg-pane">
       <Sender />
       <h2 id="pg-title" className="pg-h">Your preview has ended.</h2>
-      <p className="pg-p">Loved what you saw? Go ahead today and we&rsquo;ll turn your preview into your full website.</p>
+      <p className="pg-p">
+        {offer
+          ? <>Loved what you saw? Go ahead before the offer ends and save <strong>{aud(offer.savingCents)}</strong> on your new website.</>
+          : <>Loved what you saw? Go ahead today and we&rsquo;ll turn your preview into your full website.</>}
+      </p>
+
+      {offer && offerMs !== null && offerMs > 0 && (
+        <div className="pg-offer">
+          <span className="pg-offer-tag">{aud(offer.savingCents)} OFF</span>
+          <span className="pg-offer-label">Offer ends in</span>
+          <span className="pg-offer-time">{formatClock(offerMs)}</span>
+        </div>
+      )}
 
       {quote && (
         <dl className="pg-quote">
           <dt>Website build</dt>
-          <dd>{aud(quote.buildCents)}</dd>
+          <dd>
+            {offer && <s>{aud(quote.buildCents)}</s>}
+            {aud(offer ? offer.buildCents : quote.buildCents)}
+          </dd>
           <dt>Hosting, first year</dt>
-          <dd>{aud(quote.hostingCents)}</dd>
+          <dd>
+            {offer && <s>{aud(quote.hostingCents)}</s>}
+            {aud(offer ? offer.hostingFirstYearCents : quote.hostingCents)}
+          </dd>
+          {offer && (
+            <>
+              <dt className="pg-quote-save">You save</dt>
+              <dd className="pg-quote-save">{aud(offer.savingCents)}</dd>
+            </>
+          )}
           <dt className="pg-quote-total">Due today</dt>
-          <dd className="pg-quote-total">{aud(quote.buildCents + quote.hostingCents)}</dd>
+          <dd className="pg-quote-total">
+            {offer && <s>{aud(fullToday)}</s>}
+            {aud(offer ? offer.buildCents : fullToday)}
+          </dd>
         </dl>
       )}
 
       {error && <p className="pg-error" role="alert">{error}</p>}
       <button className="pg-btn" onClick={checkout} disabled={busy || !quote}>
-        <span>{busy ? "Opening checkout…" : "Go ahead with my website"}</span>
+        <span>{busy ? "Opening checkout…" : offer ? `Go ahead and save ${aud(offer.savingCents)}` : "Go ahead with my website"}</span>
       </button>
       {expiredCta && (
         <a className="pg-btn pg-btn-ghost" href={expiredCta.href}>
@@ -331,7 +381,8 @@ function Expired({ site, expiredCta }: { site: string; expiredCta?: Props["expir
         </a>
       )}
       <p className="pg-fine">
-        Secure checkout with Stripe.{quote ? ` Hosting renews at ${aud(quote.hostingCents)} per year.` : ""}
+        Secure checkout with Stripe.
+        {quote ? (offer ? ` Hosting renews at ${aud(quote.hostingCents)} per year from your second year.` : ` Hosting renews at ${aud(quote.hostingCents)} per year.`) : ""}
       </p>
     </div>
   );
@@ -598,7 +649,7 @@ function StaffBar({
             <dt>Started</dt>
             <dd>{full?.startedAt ? `${formatWhen(full.startedAt)}${full.startedFrom ? ` · ${full.startedFrom}` : ""}` : "—"}</dd>
             <dt>{full?.paidAt ? "Paid" : "Ends"}</dt>
-            <dd>{full?.paidAt ? `${formatWhen(full.paidAt)} · unlocked for good` : full?.expiresAt ? formatWhen(full.expiresAt) : `${formatHours(full?.hours ?? 24)} after they start`}</dd>
+            <dd>{full?.paidAt ? `${formatWhen(full.paidAt)} · unlocked for good` : full?.expiresAt ? formatWhen(full.expiresAt) : `${formatHours(full?.hours ?? 48)} after they start`}</dd>
           </dl>
 
           {editing ? (
@@ -722,6 +773,12 @@ const CSS = `
 .pg-quote{width:100%;display:grid;grid-template-columns:1fr auto;gap:8px 16px;margin:0 0 20px;padding:14px 16px;border-radius:14px;background:rgba(255,255,255,.6);border:1px solid var(--pg-line);font-size:14px}
 .pg-quote dt{color:var(--pg-muted)}
 .pg-quote dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;color:var(--pg-ink)}
+.pg-quote s{margin-right:8px;color:var(--pg-muted);font-weight:400;text-decoration-thickness:1px}
+.pg-quote .pg-quote-save{color:#1f9d55;font-weight:500}
+.pg-offer{width:100%;display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px 12px 10px 10px;border-radius:999px;background:#16161a;color:#fff;white-space:nowrap}
+.pg-offer-tag{padding:4px 10px;border-radius:999px;background:#1f9d55;font-size:12px;font-weight:600;letter-spacing:.02em}
+.pg-offer-label{font:500 10px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.65);margin-left:auto}
+.pg-offer-time{font:500 13px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
 .pg-quote .pg-quote-total{padding-top:8px;border-top:1px solid var(--pg-line);color:var(--pg-ink);font-weight:500}
 .pg-fine{margin:12px 0 0;width:100%;text-align:center;font-size:12px;color:var(--pg-muted)}
 .pg-btn:focus-visible,.pg-input:focus-visible,.pg-back:focus-visible,.pg-mini:focus-visible{outline:2px solid #16161a;outline-offset:3px}
