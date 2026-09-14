@@ -23,7 +23,7 @@ const API = "https://rankify-previews.vercel.app/api/preview";
 // the webhook that records the payment in the CRM.
 const CHECKOUT_API = "https://rankify-com-au.vercel.app/api/preview-checkout";
 
-type State = "loading" | "error" | "unconfigured" | "ready" | "active" | "expired";
+type State = "loading" | "error" | "unconfigured" | "ready" | "active" | "expired" | "paid";
 
 type Status = {
   state: State;
@@ -31,7 +31,9 @@ type Status = {
   startedAt?: string;
   expiresAt?: string;
   now?: string;
+  paidAt?: string;
   record?: {
+    paidAt?: string | null;
     email: string;
     label: string | null;
     hours: number;
@@ -82,27 +84,31 @@ export function PreviewGate({ site, staffPath, clientName, expiredCta }: Props) 
     return () => clearInterval(id);
   }, [refresh]);
 
-  // After Stripe sends them back: a thank-you card, then the page stays open
-  // in this browser — they've paid, the timer no longer applies to them.
-  const paidKey = `rankify-preview-paid-${site}`;
-  const [paid, setPaid] = useState<"no" | "thanks" | "viewing">("no");
+  // Back from Stripe. The page only unlocks once the server says "paid" (set by
+  // the Stripe webhook), so ?checkout=success on its own unlocks nothing.
+  const [returning, setReturning] = useState<"no" | "confirming" | "thanks" | "slow" | "done">("no");
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (url.searchParams.get("checkout") === "success") {
-      url.searchParams.delete("checkout");
-      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
-      try {
-        localStorage.setItem(paidKey, "1");
-      } catch {}
-      setPaid("thanks");
-      return;
-    }
-    try {
-      if (localStorage.getItem(paidKey)) setPaid("viewing");
-    } catch {}
-  }, [paidKey]);
+    if (url.searchParams.get("checkout") !== "success") return;
+    url.searchParams.delete("checkout");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    setReturning("confirming");
+  }, []);
 
-  const locked = !isStaff && (paid === "thanks" || (paid === "no" && status.state !== "active"));
+  useEffect(() => {
+    if (returning !== "confirming") return;
+    if (status.state === "paid") return setReturning("thanks");
+    // The webhook usually lands within a couple of seconds of the redirect.
+    let tries = 0;
+    const id = setInterval(() => {
+      if (++tries > 20) setReturning("slow");
+      else refresh();
+    }, 2500);
+    return () => clearInterval(id);
+  }, [returning, status.state, refresh]);
+
+  const showReturn = returning === "confirming" || returning === "thanks" || returning === "slow";
+  const locked = !isStaff && (showReturn || (status.state !== "active" && status.state !== "paid"));
 
   useEffect(() => {
     const root = document.documentElement;
@@ -117,9 +123,9 @@ export function PreviewGate({ site, staffPath, clientName, expiredCta }: Props) 
       <style>{CSS}</style>
       {isStaff ? (
         <StaffBar site={site} status={status} apply={apply} refresh={refresh} skew={skew} />
-      ) : paid === "thanks" ? (
-        <Thanks clientName={clientName} onView={() => setPaid("viewing")} />
-      ) : paid === "viewing" ? null : locked ? (
+      ) : showReturn ? (
+        <Thanks clientName={clientName} phase={returning as "confirming" | "thanks" | "slow"} onView={() => setReturning("done")} />
+      ) : status.state === "paid" ? null : locked ? (
         <Lock
           site={site}
           clientName={clientName}
@@ -331,7 +337,29 @@ function Expired({ site, expiredCta }: { site: string; expiredCta?: Props["expir
   );
 }
 
-function Thanks({ clientName, onView }: { clientName: string; onView: () => void }) {
+function Thanks({ clientName, phase, onView }: { clientName: string; phase: "confirming" | "thanks" | "slow"; onView: () => void }) {
+  if (phase !== "thanks") {
+    return (
+      <div className="pg-overlay" role="dialog" aria-modal="true" aria-labelledby="pg-title">
+        <div className="pg-card">
+          <div className="pg-brand">
+            <span className="pg-dot" />
+            Preview · {clientName}
+          </div>
+          <div className="pg-pane">
+            <Sender />
+            <h2 id="pg-title" className="pg-h">{phase === "confirming" ? "Confirming your payment…" : "Still confirming your payment."}</h2>
+            <p className="pg-p">
+              {phase === "confirming"
+                ? "This only takes a moment."
+                : "Stripe is taking a little longer than usual. Your payment is safe, so refresh this page in a minute to view your home page."}
+            </p>
+            {phase === "confirming" && <span className="pg-spinner" aria-label="Loading" />}
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="pg-overlay" role="dialog" aria-modal="true" aria-labelledby="pg-title">
       <div className="pg-card">
@@ -538,6 +566,7 @@ function StaffBar({
     ready: "Not started",
     active: "Live",
     expired: "Expired",
+    paid: "Paid",
   };
 
   if (!open) {
@@ -568,8 +597,8 @@ function StaffBar({
             <dd>{full?.email ?? "—"}{full?.label ? ` · ${full.label}` : ""}</dd>
             <dt>Started</dt>
             <dd>{full?.startedAt ? `${formatWhen(full.startedAt)}${full.startedFrom ? ` · ${full.startedFrom}` : ""}` : "—"}</dd>
-            <dt>Ends</dt>
-            <dd>{full?.expiresAt ? formatWhen(full.expiresAt) : `${formatHours(full?.hours ?? 24)} after they start`}</dd>
+            <dt>{full?.paidAt ? "Paid" : "Ends"}</dt>
+            <dd>{full?.paidAt ? `${formatWhen(full.paidAt)} · unlocked for good` : full?.expiresAt ? formatWhen(full.expiresAt) : `${formatHours(full?.hours ?? 24)} after they start`}</dd>
           </dl>
 
           {editing ? (
@@ -664,7 +693,7 @@ const CSS = `
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .pg-dot{width:7px;height:7px;border-radius:2px;background:#16161a;flex:none;display:inline-block}
-.pg-dot-live,.pg-dot-active{background:#1f9d55;box-shadow:0 0 0 3px rgba(31,157,85,.18)}
+.pg-dot-live,.pg-dot-active,.pg-dot-paid{background:#1f9d55;box-shadow:0 0 0 3px rgba(31,157,85,.18)}
 .pg-dot-ready{background:#d99a1e}.pg-dot-expired,.pg-dot-error{background:#d6453d}.pg-dot-unconfigured,.pg-dot-loading{background:#9a9aa3}
 .pg-viewport{overflow:hidden}
 .pg-track{display:flex;width:200%;transition:transform .55s cubic-bezier(.65,0,.2,1)}
