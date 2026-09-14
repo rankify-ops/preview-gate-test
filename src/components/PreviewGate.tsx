@@ -436,9 +436,22 @@ function Offer({
           <span>{expiredCta.label}</span>
         </a>
       )}
+      <ul className="pg-trust">
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+          <span><b>Secure</b>checkout</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" /><path d="M9 12l2 2 4-4" /></svg>
+          <span><b>30-day</b>money-back guarantee</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+          <span><b>Website live</b>in 7–14 days</span>
+        </li>
+      </ul>
       <p className="pg-fine">
-        Secure checkout with Stripe.
-        {quote ? (offer ? ` Hosting renews at ${aud(quote.hostingCents)} per year from your second year.` : ` Hosting renews at ${aud(quote.hostingCents)} per year.`) : ""}
+        {quote ? (offer ? `Hosting renews at ${aud(quote.hostingCents)} per year from your second year.` : `Hosting renews at ${aud(quote.hostingCents)} per year.`) : ""}
       </p>
     </div>
   );
@@ -1098,7 +1111,11 @@ const CSS = `
 .pg-offer-label{font:500 10px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.65);margin-left:auto}
 .pg-offer-time{font:500 13px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
 .pg-quote .pg-quote-total{padding-top:8px;border-top:1px solid var(--pg-line);color:var(--pg-ink);font-weight:500}
-.pg-fine{margin:12px 0 0;width:100%;text-align:center;font-size:12px;color:var(--pg-muted)}
+.pg-trust{list-style:none;margin:14px 0 0;padding:0;width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pg-trust li{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;font-size:11px;line-height:1.35;color:var(--pg-muted)}
+.pg-trust b{display:block;font-weight:500;color:var(--pg-ink)}
+.pg-trust svg{width:18px;height:18px;fill:none;stroke:#1f9d55;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.pg-fine{margin:10px 0 0;width:100%;text-align:center;font-size:12px;color:var(--pg-muted)}
 .pg-btn:focus-visible,.pg-input:focus-visible,.pg-back:focus-visible,.pg-mini:focus-visible{outline:2px solid #16161a;outline-offset:3px}
 .pg-input{
   width:100%;height:50px;padding:0 20px;margin:0 0 12px;border-radius:999px;border:1px solid rgba(22,22,26,.16);
