@@ -25,6 +25,8 @@ const API = "https://rankify-previews.vercel.app/api/preview";
 // Lives on the rankify.com.au checkout server, which holds the Stripe key and
 // the webhook that records the payment in the CRM.
 const CHECKOUT_API = "https://rankify-com-au.vercel.app/api/preview-checkout";
+// "Book a call" on no-price sites goes to Rankify's strategy call page.
+const BOOK_CALL_URL = "https://www.rankify.com.au/schedule-strategy-call";
 
 type State = "loading" | "error" | "unconfigured" | "ready" | "active" | "expired" | "paid";
 
@@ -35,8 +37,10 @@ type Status = {
   expiresAt?: string;
   now?: string;
   paidAt?: string;
+  approvedAt?: string | null;
   record?: {
     paidAt?: string | null;
+    approvedAt?: string | null;
     email: string;
     label: string | null;
     hours: number;
@@ -55,9 +59,14 @@ type Props = {
   clientName: string;
   /** Optional button on the expired screen. */
   expiredCta?: { label: string; href: string };
+  /**
+   * "checkout" (default): fixed-price sites — price card + Stripe.
+   * "call": no price yet — Approve concept + Book a call, no prices shown.
+   */
+  cta?: "checkout" | "call";
 };
 
-export function PreviewGate({ site, staffPath, clientName, expiredCta }: Props) {
+export function PreviewGate({ site, staffPath, clientName, expiredCta, cta = "checkout" }: Props) {
   const pathname = usePathname() || "/";
   const isStaff = pathname.replace(/\/$/, "").endsWith(staffPath.replace(/\/$/, ""));
 
@@ -136,9 +145,19 @@ export function PreviewGate({ site, staffPath, clientName, expiredCta }: Props) 
           apply={apply}
           refresh={refresh}
           expiredCta={expiredCta}
+          cta={cta}
         />
       ) : (
-        <Active site={site} clientName={clientName} expiresAt={status.expiresAt!} skew={skew} onExpire={refresh} expiredCta={expiredCta} />
+        <Active
+          site={site}
+          clientName={clientName}
+          expiresAt={status.expiresAt!}
+          skew={skew}
+          onExpire={refresh}
+          expiredCta={expiredCta}
+          cta={cta}
+          approvedAt={status.approvedAt ?? null}
+        />
       )}
     </>
   );
@@ -153,6 +172,7 @@ function Lock({
   apply,
   refresh,
   expiredCta,
+  cta,
 }: {
   site: string;
   clientName: string;
@@ -160,6 +180,7 @@ function Lock({
   apply: (s: Status) => void;
   refresh: () => void;
   expiredCta?: Props["expiredCta"];
+  cta: NonNullable<Props["cta"]>;
 }) {
   const [step, setStep] = useState(0);
   const [email, setEmail] = useState("");
@@ -227,7 +248,12 @@ function Lock({
           </div>
         )}
 
-        {s === "expired" && <Offer mode="ended" site={site} expiredCta={expiredCta} />}
+        {s === "expired" &&
+          (cta === "call" ? (
+            <CallCard mode="ended" site={site} approvedAt={status.approvedAt ?? null} />
+          ) : (
+            <Offer mode="ended" site={site} expiredCta={expiredCta} />
+          ))}
 
         {s === "ready" && (
           <div className="pg-viewport">
@@ -285,11 +311,13 @@ type Quote = {
 };
 
 /** Prices from the checkout server, incl. the live offer; re-prices when the offer runs out. */
-function useQuote(site: string) {
+function useQuote(site: string, enabled = true) {
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [settled, setSettled] = useState(!enabled);
   const skew = useRef(0);
 
   const loadQuote = useCallback(() => {
+    if (!enabled) return;
     fetch(`${CHECKOUT_API}?site=${encodeURIComponent(site)}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((q: Quote | null) => {
@@ -297,8 +325,9 @@ function useQuote(site: string) {
         skew.current = new Date(q.now).getTime() - Date.now();
         setQuote(q);
       })
-      .catch(() => {});
-  }, [site]);
+      .catch(() => {})
+      .finally(() => setSettled(true));
+  }, [site, enabled]);
 
   useEffect(loadQuote, [loadQuote]);
 
@@ -308,7 +337,7 @@ function useQuote(site: string) {
     if (quote?.offer && offerMs === 0) loadQuote();
   }, [offerMs, quote, loadQuote]);
 
-  return { quote, offerMs };
+  return { quote, offerMs, settled };
 }
 
 /**
@@ -492,6 +521,8 @@ function Active({
   skew,
   onExpire,
   expiredCta,
+  cta,
+  approvedAt,
 }: {
   site: string;
   clientName: string;
@@ -499,11 +530,13 @@ function Active({
   skew: React.RefObject<number>;
   onExpire: () => void;
   expiredCta?: Props["expiredCta"];
+  cta: NonNullable<Props["cta"]>;
+  approvedAt: string | null;
 }) {
   const nudgeKey = `rankify-preview-nudge-${site}`;
   const [phase, setPhase] = useState<"waiting" | "nudge" | "pill">("waiting");
   const [sheet, setSheet] = useState(false);
-  const { quote, offerMs } = useQuote(site);
+  const { quote, offerMs, settled } = useQuote(site, cta === "checkout");
 
   useEffect(() => {
     try {
@@ -512,19 +545,28 @@ function Active({
   }, [nudgeKey]);
 
   useEffect(() => {
-    if (phase !== "waiting" || !quote) return;
-    const check = () => {
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      if (max <= 0 || window.scrollY / max < 0.2) return;
+    // Wait for the price (checkout sites) — or its failure, so a slow checkout
+    // server can't leave the visitor with no popup and no timer.
+    if (phase !== "waiting" || !settled) return;
+    const show = () => {
       setPhase("nudge");
       try {
         localStorage.setItem(nudgeKey, "1");
       } catch {}
     };
+    const check = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (max > 0 && window.scrollY / max >= 0.2) show();
+    };
     check();
     window.addEventListener("scroll", check, { passive: true });
-    return () => window.removeEventListener("scroll", check);
-  }, [phase, quote, nudgeKey]);
+    // Short pages may never reach 20%: show it after 30 seconds regardless.
+    const fallback = setTimeout(show, 30_000);
+    return () => {
+      window.removeEventListener("scroll", check);
+      clearTimeout(fallback);
+    };
+  }, [phase, settled, nudgeKey]);
 
   useEffect(() => {
     if (!sheet) return;
@@ -568,7 +610,9 @@ function Active({
           </div>
           <p id="pg-nudge-title" className="pg-nudge-text">
             <strong>Hey, hope you&rsquo;re liking your new home page!</strong>{" "}
-            {offer ? (
+            {cta === "call" ? (
+              <>If you&rsquo;re happy with the direction, approve the concept or book a quick call to talk it through.</>
+            ) : offer ? (
               <>
                 Go ahead within the next {hoursLeft} hours and we&rsquo;ll take <strong>{aud(offer.savingCents)} off</strong> your website.
               </>
@@ -576,6 +620,22 @@ function Active({
               <>If you&rsquo;d like to go ahead, you can lock in your new website here.</>
             )}
           </p>
+          {cta === "call" ? (
+            <div className="pg-nudge-actions">
+              <button
+                className="pg-mini"
+                onClick={() => {
+                  setPhase("pill");
+                  setSheet(true);
+                }}
+              >
+                Approve concept
+              </button>
+              <a className="pg-mini pg-mini-ghost pg-mini-link" href={BOOK_CALL_URL} target="_blank" rel="noopener noreferrer" onClick={() => setPhase("pill")}>
+                Book a call
+              </a>
+            </div>
+          ) : (
           <div className="pg-nudge-actions">
             <button
               className="pg-mini"
@@ -590,6 +650,7 @@ function Active({
               Maybe later
             </button>
           </div>
+          )}
         </div>
       )}
 
@@ -611,11 +672,79 @@ function Active({
                 ×
               </button>
             </div>
-            <Offer mode="early" site={site} expiredCta={expiredCta} />
+            {cta === "call" ? (
+              <CallCard mode="early" site={site} approvedAt={approvedAt} />
+            ) : (
+              <Offer mode="early" site={site} expiredCta={expiredCta} />
+            )}
           </div>
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * No-price sites: Approve concept (records it + buzzes Tom) and Book a call.
+ * "ended" sits in the lock screen; "early" opens from the popup or pill.
+ */
+function CallCard({ site, mode, approvedAt }: { site: string; mode: "ended" | "early"; approvedAt: string | null }) {
+  const [approved, setApproved] = useState(Boolean(approvedAt));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (approvedAt) setApproved(true);
+  }, [approvedAt]);
+
+  async function approve() {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch(API, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ site, action: "approve" }),
+      });
+      if (!r.ok) throw new Error();
+      setApproved(true);
+    } catch {
+      setError("Couldn't send your approval. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (approved) {
+    return (
+      <div className="pg-pane">
+        <Sender />
+        <h2 id="pg-title" className="pg-h">Concept approved. Thank you!</h2>
+        <p className="pg-p">I&rsquo;ll be in touch shortly to talk through next steps. Want to lock in a time now?</p>
+        <a className="pg-btn" href={BOOK_CALL_URL} target="_blank" rel="noopener noreferrer">
+          <span>Book a call</span>
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pg-pane">
+      <Sender />
+      <h2 id="pg-title" className="pg-h">{mode === "ended" ? "Your preview has ended." : "Happy with your new home page?"}</h2>
+      <p className="pg-p">
+        {mode === "ended"
+          ? <>Thanks for taking a look. If you&rsquo;re happy with the direction, approve the concept and we&rsquo;ll get started, or book a quick call to talk it through.</>
+          : <>If you&rsquo;re happy with the direction, approve the concept and we&rsquo;ll get started. Want to talk it through first? Book a quick call.</>}
+      </p>
+      {error && <p className="pg-error" role="alert">{error}</p>}
+      <button className="pg-btn" onClick={approve} disabled={busy}>
+        <span>{busy ? "Sending…" : "Approve concept"}</span>
+      </button>
+      <a className="pg-btn pg-btn-ghost" href={BOOK_CALL_URL} target="_blank" rel="noopener noreferrer">
+        <span>Book a call</span>
+      </a>
+    </div>
   );
 }
 
@@ -831,6 +960,12 @@ function StaffBar({
             <dd>{full?.email ?? "—"}{full?.label ? ` · ${full.label}` : ""}</dd>
             <dt>Started</dt>
             <dd>{full?.startedAt ? `${formatWhen(full.startedAt)}${full.startedFrom ? ` · ${full.startedFrom}` : ""}` : "—"}</dd>
+            {full?.approvedAt && (
+              <>
+                <dt>Approved</dt>
+                <dd>{formatWhen(full.approvedAt)}</dd>
+              </>
+            )}
             <dt>{full?.paidAt ? "Paid" : "Ends"}</dt>
             <dd>{full?.paidAt ? `${formatWhen(full.paidAt)} · unlocked for good` : full?.expiresAt ? formatWhen(full.expiresAt) : `${formatHours(full?.hours ?? 48)} after they start`}</dd>
           </dl>
@@ -1036,6 +1171,7 @@ const CSS = `
 .pg-staff-dl dt{font:500 10px/18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--pg-muted)}
 .pg-staff-dl dd{margin:0;color:var(--pg-ink);overflow-wrap:anywhere}
 .pg-mini{appearance:none;border:0;cursor:pointer;height:32px;padding:0 14px;border-radius:999px;background:#16161a;color:#fff;font-size:12px;font-weight:500;font-family:inherit;white-space:nowrap}
+.pg-mini-link{display:inline-flex;align-items:center;text-decoration:none}
 .pg-mini-ghost{background:rgba(22,22,26,.07);color:var(--pg-ink)}
 .pg-staff-tab{
   position:fixed;z-index:2147483000;right:16px;bottom:16px;appearance:none;border:1px solid rgba(255,255,255,.9);cursor:pointer;
