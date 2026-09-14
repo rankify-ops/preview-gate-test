@@ -465,7 +465,7 @@ function Sender() {
       <img className="pg-avatar" src={THOMAS} alt="Thomas Flood" width={48} height={48} />
       <div>
         <div className="pg-sender-name">Thomas Flood</div>
-        <div className="pg-sender-role">Rankify</div>
+        <div className="pg-sender-role">High Performance Web Developer</div>
       </div>
     </div>
   );
@@ -559,8 +559,8 @@ function Active({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="pg-avatar pg-avatar-sm" src={THOMAS} alt="" width={36} height={36} />
             <div>
-              <div className="pg-sender-name">Thomas from Rankify</div>
-              <div className="pg-sender-role">Your preview</div>
+              <div className="pg-sender-name">Thomas Flood</div>
+              <div className="pg-sender-role">High Performance Web Developer</div>
             </div>
           </div>
           <p id="pg-nudge-title" className="pg-nudge-text">
@@ -936,7 +936,7 @@ const CSS = `
 .pg-sender{display:flex;align-items:center;gap:12px;margin-bottom:18px}
 .pg-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;flex:none;display:block;border:2px solid #fff;box-shadow:0 4px 14px -4px rgba(20,20,30,.35)}
 .pg-sender-name{font-size:14px;font-weight:500;line-height:1.2;color:var(--pg-ink)}
-.pg-sender-role{font:500 10px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--pg-muted)}
+.pg-sender-role{white-space:nowrap;font:500 10px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--pg-muted)}
 .pg-h{margin:0 0 10px;font-size:24px;line-height:1.15;font-weight:400;letter-spacing:-.02em;color:var(--pg-ink)}
 .pg-p{margin:0 0 22px;font-size:15px;font-weight:400;color:var(--pg-muted)}
 .pg-p strong{color:var(--pg-ink);font-weight:500}
