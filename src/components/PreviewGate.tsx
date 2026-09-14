@@ -294,14 +294,90 @@ function Countdown({ expiresAt, skew, onExpire }: { expiresAt: string; skew: Rea
       onExpire();
     }
   }, [ms, onExpire]);
+  const drag = useDraggableCorner();
   if (ms === null) return null;
   return (
-    <div className="pg-pill" role="timer" aria-live="off">
+    <div
+      ref={drag.ref}
+      className={`pg-pill pg-pill-${drag.corner}${drag.dragging ? " pg-pill-dragging" : ""}`}
+      style={drag.style}
+      role="timer"
+      aria-live="off"
+      title="Drag to move"
+      {...drag.handlers}
+    >
+      <span className="pg-grip" aria-hidden="true" />
       <span className="pg-dot pg-dot-live" />
       <span className="pg-pill-label">Preview ends in</span>
       <span className="pg-pill-time">{formatClock(ms)}</span>
     </div>
   );
+}
+
+type Corner = "tl" | "tr" | "bl" | "br";
+const CORNER_STORAGE = "rankify-preview-pill-corner";
+
+/**
+ * Drag the pill anywhere; on release it snaps to the nearest corner and that
+ * corner is remembered per browser, so a client who moves it off their menu
+ * button doesn't have to do it again on every visit.
+ */
+function useDraggableCorner() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [corner, setCorner] = useState<Corner>("br");
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const start = useRef<{ px: number; py: number; left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(CORNER_STORAGE);
+    } catch {}
+    if (saved === "tl" || saved === "tr" || saved === "bl" || saved === "br") setCorner(saved);
+    else if (window.innerWidth < 768) setCorner("bl");
+  }, []);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    start.current = { px: e.clientX, py: e.clientY, left: r.left, top: r.top };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const st = start.current;
+    const el = ref.current;
+    if (!st || !el) return;
+    const dx = e.clientX - st.px;
+    const dy = e.clientY - st.py;
+    if (!pos && Math.hypot(dx, dy) < 4) return; // a tap, not a drag
+    const maxX = window.innerWidth - el.offsetWidth;
+    const maxY = window.innerHeight - el.offsetHeight;
+    setPos({ x: Math.min(Math.max(st.left + dx, 0), maxX), y: Math.min(Math.max(st.top + dy, 0), maxY) });
+  };
+
+  const onPointerUp = () => {
+    const el = ref.current;
+    if (pos && el) {
+      const cx = pos.x + el.offsetWidth / 2;
+      const cy = pos.y + el.offsetHeight / 2;
+      const next = `${cy < window.innerHeight / 2 ? "t" : "b"}${cx < window.innerWidth / 2 ? "l" : "r"}` as Corner;
+      setCorner(next);
+      try {
+        localStorage.setItem(CORNER_STORAGE, next);
+      } catch {}
+    }
+    start.current = null;
+    setPos(null);
+  };
+
+  return {
+    ref,
+    corner,
+    dragging: pos !== null,
+    style: pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined,
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp },
+  };
 }
 
 /* ------------------------------------------------------------- staff bar */
@@ -525,15 +601,23 @@ const CSS = `
 @keyframes pg-spin{to{transform:rotate(360deg)}}
 
 .pg-pill{
-  position:fixed;z-index:2147483000;right:16px;bottom:var(--pg-bottom,16px);
-  display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:999px;white-space:nowrap;
+  position:fixed;z-index:2147483000;
+  display:flex;align-items:center;gap:10px;padding:9px 14px 9px 10px;border-radius:999px;white-space:nowrap;
+  cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;
+  transition:left .25s cubic-bezier(.2,.8,.2,1),top .25s cubic-bezier(.2,.8,.2,1),box-shadow .2s;
   background:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.9);
   -webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);
   box-shadow:0 10px 30px -10px rgba(20,20,30,.3);
 }
 .pg-pill-label{font:500 10px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--pg-muted)}
 .pg-pill-time{font:500 13px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;color:var(--pg-ink)}
-@media (max-width:767px){.pg-pill{bottom:auto;top:var(--pg-top-mobile,10px);right:50%;transform:translateX(50%);padding:7px 12px;gap:8px}.pg-pill-label{display:none}}
+.pg-pill-tl{top:max(16px,env(safe-area-inset-top));left:16px}
+.pg-pill-tr{top:max(16px,env(safe-area-inset-top));right:16px}
+.pg-pill-bl{bottom:max(16px,env(safe-area-inset-bottom));left:16px}
+.pg-pill-br{bottom:max(16px,env(safe-area-inset-bottom));right:16px}
+.pg-pill-dragging{cursor:grabbing;transition:none;box-shadow:0 18px 40px -10px rgba(20,20,30,.45)}
+.pg-grip{width:6px;height:12px;flex:none;opacity:.45;background-image:radial-gradient(circle,#16161a 1px,transparent 1.2px);background-size:3px 4px}
+@media (max-width:767px){.pg-pill{padding:7px 12px 7px 9px;gap:8px}.pg-pill-label{display:none}}
 
 .pg-staff{
   position:fixed;z-index:2147483000;right:16px;bottom:16px;width:min(380px,calc(100vw - 32px));
