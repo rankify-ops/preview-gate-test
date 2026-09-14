@@ -1,0 +1,12 @@
+*.tsbuildinfo
+.DS_Store
+.logo-drop
+.next
+.preview
+next-env.d.ts
+node_modules
+out
+scrape/*.html
+
+# scrape + session notes
+.firecrawl
