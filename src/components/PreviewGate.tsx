@@ -19,7 +19,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 const API = "https://rankify-previews.vercel.app/api/preview";
-const ADMIN_KEY_STORAGE = "rankify-preview-admin-key";
 
 type State = "loading" | "error" | "unconfigured" | "ready" | "active" | "expired";
 
@@ -320,7 +319,6 @@ function StaffBar({
   refresh: () => void;
   skew: React.RefObject<number>;
 }) {
-  const [key, setKey] = useState("");
   const [open, setOpen] = useState(true);
   const [editing, setEditing] = useState(false);
   const [email, setEmail] = useState("");
@@ -328,25 +326,15 @@ function StaffBar({
   const [msg, setMsg] = useState("");
   const [full, setFull] = useState<Status["record"] | null>(null);
 
-  useEffect(() => {
-    try {
-      setKey(localStorage.getItem(ADMIN_KEY_STORAGE) || "");
-    } catch {}
-  }, []);
-
   const admin = useCallback(
     async (body: Record<string, unknown>) => {
       setMsg("");
       const r = await fetch(API, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-admin-key": key },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ site, ...body }),
       });
       const data = await r.json().catch(() => ({}));
-      if (r.status === 401) {
-        setMsg("Admin key rejected.");
-        return null;
-      }
       if (!r.ok) {
         setMsg(data.error || "Request failed.");
         return null;
@@ -355,25 +343,16 @@ function StaffBar({
       apply(data);
       return data;
     },
-    [key, site, apply],
+    [site, apply],
   );
 
   // Load the full record (with email) whenever the public status changes.
   useEffect(() => {
-    if (key && status.state !== "loading") admin({ action: "status" });
+    if (status.state !== "loading") admin({ action: "status" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, status.state, status.startedAt]);
+  }, [status.state, status.startedAt]);
 
   const ms = useRemaining(status.state === "active" ? status.expiresAt : null, skew);
-
-  function saveKey(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const v = String(new FormData(e.currentTarget).get("key") || "").trim();
-    try {
-      localStorage.setItem(ADMIN_KEY_STORAGE, v);
-    } catch {}
-    setKey(v);
-  }
 
   const badge: Record<State, string> = {
     loading: "Loading",
@@ -407,13 +386,6 @@ function StaffBar({
         </button>
       </div>
 
-      {!key ? (
-        <form className="pg-staff-row" onSubmit={saveKey}>
-          <input className="pg-input pg-input-sm" name="key" type="password" placeholder="Admin key" autoComplete="off" />
-          <button className="pg-mini" type="submit">Unlock</button>
-        </form>
-      ) : (
-        <>
           <dl className="pg-staff-dl">
             <dt>Client</dt>
             <dd>{full?.email ?? "—"}{full?.label ? ` · ${full.label}` : ""}</dd>
@@ -461,8 +433,6 @@ function StaffBar({
               <button className="pg-mini pg-mini-ghost" onClick={refresh}>Refresh</button>
             </div>
           )}
-        </>
-      )}
       {msg && <p className="pg-error">{msg}</p>}
     </div>
   );
