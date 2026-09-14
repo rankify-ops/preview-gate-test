@@ -135,7 +135,7 @@ export function PreviewGate({ site, staffPath, clientName, expiredCta }: Props) 
           expiredCta={expiredCta}
         />
       ) : (
-        <Countdown expiresAt={status.expiresAt!} skew={skew} onExpire={refresh} />
+        <Active site={site} clientName={clientName} expiresAt={status.expiresAt!} skew={skew} onExpire={refresh} expiredCta={expiredCta} />
       )}
     </>
   );
@@ -224,7 +224,7 @@ function Lock({
           </div>
         )}
 
-        {s === "expired" && <Expired site={site} expiredCta={expiredCta} />}
+        {s === "expired" && <Offer mode="ended" site={site} expiredCta={expiredCta} />}
 
         {s === "ready" && (
           <div className="pg-viewport">
@@ -281,10 +281,9 @@ type Quote = {
   offer: { endsAt: string; buildCents: number; hostingFirstYearCents: number; savingCents: number } | null;
 };
 
-function Expired({ site, expiredCta }: { site: string; expiredCta?: Props["expiredCta"] }) {
+/** Prices from the checkout server, incl. the live offer; re-prices when the offer runs out. */
+function useQuote(site: string) {
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const skew = useRef(0);
 
   const loadQuote = useCallback(() => {
@@ -305,6 +304,27 @@ function Expired({ site, expiredCta }: { site: string; expiredCta?: Props["expir
   useEffect(() => {
     if (quote?.offer && offerMs === 0) loadQuote();
   }, [offerMs, quote, loadQuote]);
+
+  return { quote, offerMs };
+}
+
+/**
+ * The price card + checkout. "ended" sits inside the lock screen once the
+ * preview is over; "early" is the same card opened from the nudge or the
+ * countdown pill while the preview is still running.
+ */
+function Offer({
+  site,
+  mode,
+  expiredCta,
+}: {
+  site: string;
+  mode: "ended" | "early";
+  expiredCta?: Props["expiredCta"];
+}) {
+  const { quote, offerMs } = useQuote(site);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   async function checkout() {
     setBusy(true);
@@ -330,11 +350,15 @@ function Expired({ site, expiredCta }: { site: string; expiredCta?: Props["expir
   return (
     <div className="pg-pane">
       <Sender />
-      <h2 id="pg-title" className="pg-h">Your preview has ended.</h2>
+      <h2 id="pg-title" className="pg-h">{mode === "ended" ? "Your preview has ended." : "Love your new home page?"}</h2>
       <p className="pg-p">
-        {offer
-          ? <>Loved what you saw? Go ahead before the offer ends and save <strong>{aud(offer.savingCents)}</strong> on your new website.</>
-          : <>Loved what you saw? Go ahead today and we&rsquo;ll turn your preview into your full website.</>}
+        {mode === "ended"
+          ? offer
+            ? <>Loved what you saw? Go ahead before the offer ends and save <strong>{aud(offer.savingCents)}</strong> on your new website.</>
+            : <>Loved what you saw? Go ahead today and we&rsquo;ll turn your preview into your full website.</>
+          : offer
+            ? <>Go ahead before the offer ends and we&rsquo;ll take <strong>{aud(offer.savingCents)}</strong> off your new website.</>
+            : <>Go ahead today and we&rsquo;ll turn your preview into your full website.</>}
       </p>
 
       {offer && offerMs !== null && offerMs > 0 && (
@@ -450,6 +474,148 @@ function Sender() {
 // Thomas's headshot, inlined (~2.5KB) so the gate has no extra file to host per site.
 const THOMAS = "data:image/webp;base64,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";
 
+/* ---------------------------------------------------------------- active */
+
+/**
+ * While the preview is running. On the first unlock in this browser the timer
+ * stays out of the way: once they've scrolled 20% of the page, Thomas pops up
+ * bottom-right with the offer. After that (or on any later visit) it's the
+ * countdown pill, which re-opens the offer when tapped.
+ */
+function Active({
+  site,
+  clientName,
+  expiresAt,
+  skew,
+  onExpire,
+  expiredCta,
+}: {
+  site: string;
+  clientName: string;
+  expiresAt: string;
+  skew: React.RefObject<number>;
+  onExpire: () => void;
+  expiredCta?: Props["expiredCta"];
+}) {
+  const nudgeKey = `rankify-preview-nudge-${site}`;
+  const [phase, setPhase] = useState<"waiting" | "nudge" | "pill">("waiting");
+  const [sheet, setSheet] = useState(false);
+  const { quote, offerMs } = useQuote(site);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(nudgeKey)) setPhase("pill");
+    } catch {}
+  }, [nudgeKey]);
+
+  useEffect(() => {
+    if (phase !== "waiting" || !quote) return;
+    const check = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (max <= 0 || window.scrollY / max < 0.2) return;
+      setPhase("nudge");
+      try {
+        localStorage.setItem(nudgeKey, "1");
+      } catch {}
+    };
+    check();
+    window.addEventListener("scroll", check, { passive: true });
+    return () => window.removeEventListener("scroll", check);
+  }, [phase, quote, nudgeKey]);
+
+  useEffect(() => {
+    if (!sheet) return;
+    const root = document.documentElement;
+    root.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSheet(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      root.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [sheet]);
+
+  const offer = quote?.offer && offerMs ? quote.offer : null;
+  const hoursLeft = offerMs ? Math.max(1, Math.round(offerMs / 3_600_000)) : 0;
+
+  return (
+    <>
+      <Countdown
+        expiresAt={expiresAt}
+        skew={skew}
+        onExpire={onExpire}
+        hidden={phase !== "pill" || sheet}
+        onOpen={() => setSheet(true)}
+      />
+
+      {phase === "nudge" && !sheet && (
+        <div className="pg-nudge" role="dialog" aria-labelledby="pg-nudge-title">
+          <button className="pg-nudge-x" onClick={() => setPhase("pill")} aria-label="Close">
+            ×
+          </button>
+          <div className="pg-nudge-head">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="pg-avatar pg-avatar-sm" src={THOMAS} alt="" width={36} height={36} />
+            <div>
+              <div className="pg-sender-name">Thomas from Rankify</div>
+              <div className="pg-sender-role">Your preview</div>
+            </div>
+          </div>
+          <p id="pg-nudge-title" className="pg-nudge-text">
+            <strong>Hey, hope you&rsquo;re liking your new home page!</strong>{" "}
+            {offer ? (
+              <>
+                Go ahead within the next {hoursLeft} hours and we&rsquo;ll take <strong>{aud(offer.savingCents)} off</strong> your website.
+              </>
+            ) : (
+              <>If you&rsquo;d like to go ahead, you can lock in your new website here.</>
+            )}
+          </p>
+          <div className="pg-nudge-actions">
+            <button
+              className="pg-mini"
+              onClick={() => {
+                setPhase("pill");
+                setSheet(true);
+              }}
+            >
+              {offer ? `Claim ${aud(offer.savingCents)} off` : "Go ahead"}
+            </button>
+            <button className="pg-back pg-back-inline" onClick={() => setPhase("pill")}>
+              Maybe later
+            </button>
+          </div>
+        </div>
+      )}
+
+      {sheet && (
+        <div
+          className="pg-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pg-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSheet(false);
+          }}
+        >
+          <div className="pg-card">
+            <div className="pg-brand">
+              <span className="pg-dot pg-dot-live" />
+              Preview · {clientName}
+              <button className="pg-card-x" onClick={() => setSheet(false)} aria-label="Close">
+                ×
+              </button>
+            </div>
+            <Offer mode="early" site={site} expiredCta={expiredCta} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ------------------------------------------------------------- countdown */
 
 function useRemaining(expiresAt: string | undefined | null, skew: React.RefObject<number>) {
@@ -465,7 +631,19 @@ function useRemaining(expiresAt: string | undefined | null, skew: React.RefObjec
   return ms;
 }
 
-function Countdown({ expiresAt, skew, onExpire }: { expiresAt: string; skew: React.RefObject<number>; onExpire: () => void }) {
+function Countdown({
+  expiresAt,
+  skew,
+  onExpire,
+  hidden,
+  onOpen,
+}: {
+  expiresAt: string;
+  skew: React.RefObject<number>;
+  onExpire: () => void;
+  hidden?: boolean;
+  onOpen?: () => void;
+}) {
   const ms = useRemaining(expiresAt, skew);
   const fired = useRef(false);
   useEffect(() => {
@@ -474,8 +652,8 @@ function Countdown({ expiresAt, skew, onExpire }: { expiresAt: string; skew: Rea
       onExpire();
     }
   }, [ms, onExpire]);
-  const drag = useDraggableCorner();
-  if (ms === null) return null;
+  const drag = useDraggableCorner(onOpen);
+  if (ms === null || hidden) return null;
   return (
     <div
       ref={drag.ref}
@@ -483,7 +661,7 @@ function Countdown({ expiresAt, skew, onExpire }: { expiresAt: string; skew: Rea
       style={drag.style}
       role="timer"
       aria-live="off"
-      title="Drag to move"
+      title={onOpen ? "Tap for your offer · drag to move" : "Drag to move"}
       {...drag.handlers}
     >
       <span className="pg-grip" aria-hidden="true" />
@@ -502,7 +680,7 @@ const CORNER_STORAGE = "rankify-preview-pill-corner";
  * corner is remembered per browser, so a client who moves it off their menu
  * button doesn't have to do it again on every visit.
  */
-function useDraggableCorner() {
+function useDraggableCorner(onTap?: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   const [corner, setCorner] = useState<Corner>("br");
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -546,6 +724,8 @@ function useDraggableCorner() {
       try {
         localStorage.setItem(CORNER_STORAGE, next);
       } catch {}
+    } else if (start.current) {
+      onTap?.();
     }
     start.current = null;
     setPos(null);
@@ -731,7 +911,7 @@ const CSS = `
   -webkit-backdrop-filter:blur(22px) saturate(1.3);backdrop-filter:blur(22px) saturate(1.3);
 }
 .pg-card{
-  width:100%;max-width:440px;overflow:hidden;border-radius:20px;
+  width:100%;max-width:440px;overflow:hidden auto;max-height:calc(100dvh - 32px);border-radius:20px;
   background:rgba(255,255,255,.72);border:1px solid rgba(255,255,255,.9);
   -webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
   box-shadow:0 1px 0 rgba(255,255,255,.8) inset,0 30px 80px -20px rgba(20,20,30,.35);
@@ -739,7 +919,7 @@ const CSS = `
 }
 @keyframes pg-rise{from{transform:translateY(14px) scale(.985)}to{transform:none}}
 .pg-brand{
-  display:flex;align-items:center;gap:8px;padding:14px 22px;border-bottom:1px solid var(--pg-line);
+  display:flex;align-items:center;gap:8px;padding:10px 12px 10px 22px;min-height:46px;border-bottom:1px solid var(--pg-line);
   font:500 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--pg-muted);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
@@ -812,6 +992,28 @@ const CSS = `
 .pg-pill-dragging{cursor:grabbing;transition:none;box-shadow:0 18px 40px -10px rgba(20,20,30,.45)}
 .pg-grip{width:6px;height:12px;flex:none;opacity:.45;background-image:radial-gradient(circle,#16161a 1px,transparent 1.2px);background-size:3px 4px}
 @media (max-width:767px){.pg-pill{padding:7px 12px 7px 9px;gap:8px}.pg-pill-label{display:none}}
+
+.pg-nudge{
+  position:fixed;z-index:2147483000;right:16px;bottom:max(16px,env(safe-area-inset-bottom));width:min(340px,calc(100vw - 32px));
+  padding:16px 16px 14px;border-radius:18px;background:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.9);
+  -webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);
+  box-shadow:0 24px 60px -18px rgba(20,20,30,.4);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,sans-serif;color:#16161a;line-height:1.5;box-sizing:border-box;
+  animation:pg-nudge-in .5s cubic-bezier(.2,.8,.2,1) both;
+}
+.pg-nudge *{box-sizing:border-box}
+@keyframes pg-nudge-in{from{transform:translateY(24px)}to{transform:none}}
+.pg-nudge-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.pg-avatar-sm{width:36px;height:36px}
+.pg-nudge-text{margin:0 0 12px;font-size:14px;color:#5d5d66}
+.pg-nudge-text strong{color:#16161a;font-weight:500}
+.pg-nudge-actions{display:flex;align-items:center;gap:6px}
+.pg-back-inline{margin:0}
+.pg-nudge-x,.pg-card-x{appearance:none;border:0;background:none;cursor:pointer;color:#5d5d66;font-size:20px;line-height:1;padding:4px 6px}
+.pg-nudge-x{position:absolute;top:8px;right:8px}
+.pg-card-x{margin-left:auto}
+.pg-nudge-x:hover,.pg-card-x:hover{color:#16161a}
+@media (prefers-reduced-motion:reduce){.pg-nudge{animation:none}}
 
 .pg-staff{
   position:fixed;z-index:2147483000;right:16px;bottom:16px;width:min(380px,calc(100vw - 32px));
