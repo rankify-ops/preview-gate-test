@@ -196,7 +196,7 @@ function Lock({
 
         {s === "expired" && (
           <div className="pg-pane">
-            <div className="pg-label">Preview ended</div>
+            <Sender />
             <h2 id="pg-title" className="pg-h">Your preview has ended.</h2>
             <p className="pg-p">Thanks for taking a look. If you&rsquo;d like to go ahead with your new website, get in touch with us and we&rsquo;ll take it from here.</p>
             {expiredCta && (
@@ -211,11 +211,12 @@ function Lock({
           <div className="pg-viewport">
             <div className="pg-track" style={{ transform: `translateX(${step * -50}%)` }}>
               <div className="pg-pane" aria-hidden={step !== 0}>
-                <div className="pg-label">Ready</div>
-                <h2 id="pg-title" className="pg-h">Hey, your preview home page is ready.</h2>
+                <Sender />
+                <h2 id="pg-title" className="pg-h">Hey, Thomas from Rankify here. Your home page preview is ready!</h2>
                 <p className="pg-p">
-                  When you&rsquo;re ready, click below to begin your preview. Your preview only lasts{" "}
-                  <strong>{hours === 24 ? "24 hours" : formatHours(hours)}</strong>, and the timer starts as soon as you open it.
+                  Before you jump in: we build these previews for free, so each one is only open for{" "}
+                  <strong>{hours === 24 ? "24 hours" : formatHours(hours)}</strong>. The timer starts the moment you open it, so
+                  pick a time when you can have a proper look.
                 </p>
                 <button className="pg-btn" onClick={() => setStep(1)} tabIndex={step === 0 ? 0 : -1}>
                   <span>Next</span>
@@ -225,7 +226,7 @@ function Lock({
               <form className="pg-pane" onSubmit={start} aria-hidden={step !== 1}>
                 <div className="pg-label">Step 2 of 2</div>
                 <h2 className="pg-h">Confirm it&rsquo;s you.</h2>
-                <p className="pg-p">Enter the email address we sent your preview to.</p>
+                <p className="pg-p">Enter the email address we sent your preview to, and your {hours === 24 ? "24 hours" : formatHours(hours)} will start.</p>
                 <input
                   ref={emailRef}
                   className="pg-input"
@@ -253,6 +254,22 @@ function Lock({
     </div>
   );
 }
+
+function Sender() {
+  return (
+    <div className="pg-sender">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="pg-avatar" src={THOMAS} alt="Thomas Flood" width={48} height={48} />
+      <div>
+        <div className="pg-sender-name">Thomas Flood</div>
+        <div className="pg-sender-role">Rankify</div>
+      </div>
+    </div>
+  );
+}
+
+// Thomas's headshot, inlined (~2.5KB) so the gate has no extra file to host per site.
+const THOMAS = "data:image/webp;base64,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";
 
 /* ------------------------------------------------------------- countdown */
 
@@ -509,21 +526,24 @@ const CSS = `
 .pg-center{padding:56px 0;display:flex;justify-content:center}
 .pg-label{font:500 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--pg-muted);margin-bottom:14px}
 .pg-label-inline{margin:0}
-.pg-h{margin:0 0 10px;font-size:26px;line-height:1.15;font-weight:400;letter-spacing:-.02em;color:var(--pg-ink)}
+.pg-sender{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.pg-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;flex:none;display:block;border:2px solid #fff;box-shadow:0 4px 14px -4px rgba(20,20,30,.35)}
+.pg-sender-name{font-size:14px;font-weight:500;line-height:1.2;color:var(--pg-ink)}
+.pg-sender-role{font:500 10px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--pg-muted)}
+.pg-h{margin:0 0 10px;font-size:24px;line-height:1.15;font-weight:400;letter-spacing:-.02em;color:var(--pg-ink)}
 .pg-p{margin:0 0 22px;font-size:15px;font-weight:400;color:var(--pg-muted)}
 .pg-p strong{color:var(--pg-ink);font-weight:500}
 .pg-btn{
   appearance:none;border:0;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;
   width:100%;min-height:50px;padding:0 26px;background:var(--pg-accent);color:#fff;
-  transform:skewX(-12deg);border-radius:4px;font-size:15px;font-weight:500;
+  border-radius:999px;font-size:15px;font-weight:500;
   transition:transform .2s ease,background .2s ease,opacity .2s;
 }
-.pg-btn>span{display:inline-block;transform:skewX(12deg)}
-.pg-btn:hover{transform:skewX(-12deg) translateY(-1px);background:#000}
+.pg-btn:hover{transform:translateY(-1px);background:#000}
 .pg-btn:disabled{opacity:.6;cursor:default}
 .pg-btn:focus-visible,.pg-input:focus-visible,.pg-back:focus-visible,.pg-mini:focus-visible{outline:2px solid #16161a;outline-offset:3px}
 .pg-input{
-  width:100%;height:50px;padding:0 16px;margin:0 0 12px;border-radius:10px;border:1px solid rgba(22,22,26,.16);
+  width:100%;height:50px;padding:0 20px;margin:0 0 12px;border-radius:999px;border:1px solid rgba(22,22,26,.16);
   background:rgba(255,255,255,.85);color:var(--pg-ink);font-size:16px;font-weight:400;font-family:inherit;outline:none;
 }
 .pg-input:focus{border-color:#16161a}
@@ -562,7 +582,7 @@ const CSS = `
 .pg-staff-dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0}
 .pg-staff-dl dt{font:500 10px/18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--pg-muted)}
 .pg-staff-dl dd{margin:0;color:var(--pg-ink);overflow-wrap:anywhere}
-.pg-mini{appearance:none;border:0;cursor:pointer;height:32px;padding:0 12px;border-radius:7px;background:#16161a;color:#fff;font-size:12px;font-weight:500;font-family:inherit;white-space:nowrap}
+.pg-mini{appearance:none;border:0;cursor:pointer;height:32px;padding:0 14px;border-radius:999px;background:#16161a;color:#fff;font-size:12px;font-weight:500;font-family:inherit;white-space:nowrap}
 .pg-mini-ghost{background:rgba(22,22,26,.07);color:var(--pg-ink)}
 .pg-staff-tab{
   position:fixed;z-index:2147483000;right:16px;bottom:16px;appearance:none;border:1px solid rgba(255,255,255,.9);cursor:pointer;
