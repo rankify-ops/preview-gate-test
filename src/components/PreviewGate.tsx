@@ -13,6 +13,9 @@
  * everyone who opens the URL. Styles are a plain <style> string on purpose: it
  * bypasses each site's Tailwind/Lightning CSS pipeline (which strips
  * backdrop-filter) and keeps the gate looking the same on every site.
+ *
+ * A site with its own fixed bottom bar sets --pg-bottom-offset (e.g. 76px under
+ * the breakpoint where that bar shows) so the pill and popup sit above it.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -987,14 +990,14 @@ const CSS = `
 .pg-pill-time{font:500 13px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;color:var(--pg-ink)}
 .pg-pill-tl{top:max(16px,env(safe-area-inset-top));left:16px}
 .pg-pill-tr{top:max(16px,env(safe-area-inset-top));right:16px}
-.pg-pill-bl{bottom:max(16px,env(safe-area-inset-bottom));left:16px}
-.pg-pill-br{bottom:max(16px,env(safe-area-inset-bottom));right:16px}
+.pg-pill-bl{bottom:calc(max(16px,env(safe-area-inset-bottom)) + var(--pg-bottom-offset,0px));left:16px}
+.pg-pill-br{bottom:calc(max(16px,env(safe-area-inset-bottom)) + var(--pg-bottom-offset,0px));right:16px}
 .pg-pill-dragging{cursor:grabbing;transition:none;box-shadow:0 18px 40px -10px rgba(20,20,30,.45)}
 .pg-grip{width:6px;height:12px;flex:none;opacity:.45;background-image:radial-gradient(circle,#16161a 1px,transparent 1.2px);background-size:3px 4px}
 @media (max-width:767px){.pg-pill{padding:7px 12px 7px 9px;gap:8px}.pg-pill-label{display:none}}
 
 .pg-nudge{
-  position:fixed;z-index:2147483000;right:16px;bottom:max(16px,env(safe-area-inset-bottom));width:min(340px,calc(100vw - 32px));
+  position:fixed;z-index:2147483000;right:16px;bottom:calc(max(16px,env(safe-area-inset-bottom)) + var(--pg-bottom-offset,0px));width:min(340px,calc(100vw - 32px));
   padding:16px 16px 14px;border-radius:18px;background:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.9);
   -webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);
   box-shadow:0 24px 60px -18px rgba(20,20,30,.4);
