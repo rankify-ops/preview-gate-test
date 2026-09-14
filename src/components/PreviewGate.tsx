@@ -19,6 +19,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 const API = "https://rankify-previews.vercel.app/api/preview";
+// Lives on the rankify.com.au checkout server, which holds the Stripe key and
+// the webhook that records the payment in the CRM.
+const CHECKOUT_API = "https://rankify-com-au.vercel.app/api/preview-checkout";
 
 type State = "loading" | "error" | "unconfigured" | "ready" | "active" | "expired";
 
@@ -79,7 +82,27 @@ export function PreviewGate({ site, staffPath, clientName, expiredCta }: Props) 
     return () => clearInterval(id);
   }, [refresh]);
 
-  const locked = !isStaff && status.state !== "active";
+  // After Stripe sends them back: a thank-you card, then the page stays open
+  // in this browser — they've paid, the timer no longer applies to them.
+  const paidKey = `rankify-preview-paid-${site}`;
+  const [paid, setPaid] = useState<"no" | "thanks" | "viewing">("no");
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("checkout") === "success") {
+      url.searchParams.delete("checkout");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      try {
+        localStorage.setItem(paidKey, "1");
+      } catch {}
+      setPaid("thanks");
+      return;
+    }
+    try {
+      if (localStorage.getItem(paidKey)) setPaid("viewing");
+    } catch {}
+  }, [paidKey]);
+
+  const locked = !isStaff && (paid === "thanks" || (paid === "no" && status.state !== "active"));
 
   useEffect(() => {
     const root = document.documentElement;
@@ -94,7 +117,9 @@ export function PreviewGate({ site, staffPath, clientName, expiredCta }: Props) 
       <style>{CSS}</style>
       {isStaff ? (
         <StaffBar site={site} status={status} apply={apply} refresh={refresh} skew={skew} />
-      ) : locked ? (
+      ) : paid === "thanks" ? (
+        <Thanks clientName={clientName} onView={() => setPaid("viewing")} />
+      ) : paid === "viewing" ? null : locked ? (
         <Lock
           site={site}
           clientName={clientName}
@@ -193,18 +218,7 @@ function Lock({
           </div>
         )}
 
-        {s === "expired" && (
-          <div className="pg-pane">
-            <Sender />
-            <h2 id="pg-title" className="pg-h">Your preview has ended.</h2>
-            <p className="pg-p">Thanks for taking a look. If you&rsquo;d like to go ahead with your new website, get in touch with us and we&rsquo;ll take it from here.</p>
-            {expiredCta && (
-              <a className="pg-btn" href={expiredCta.href}>
-                <span>{expiredCta.label}</span>
-              </a>
-            )}
-          </div>
-        )}
+        {s === "expired" && <Expired site={site} expiredCta={expiredCta} />}
 
         {s === "ready" && (
           <div className="pg-viewport">
@@ -253,6 +267,93 @@ function Lock({
     </div>
   );
 }
+
+function Expired({ site, expiredCta }: { site: string; expiredCta?: Props["expiredCta"] }) {
+  const [quote, setQuote] = useState<{ buildCents: number; hostingCents: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch(`${CHECKOUT_API}?site=${encodeURIComponent(site)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((q) => q && setQuote(q))
+      .catch(() => {});
+  }, [site]);
+
+  async function checkout() {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch(CHECKOUT_API, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ site, returnUrl: window.location.origin + window.location.pathname }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data.url) throw new Error();
+      window.location.href = data.url;
+    } catch {
+      setError("Couldn't open checkout. Please try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="pg-pane">
+      <Sender />
+      <h2 id="pg-title" className="pg-h">Your preview has ended.</h2>
+      <p className="pg-p">Loved what you saw? Go ahead today and we&rsquo;ll turn your preview into your full website.</p>
+
+      {quote && (
+        <dl className="pg-quote">
+          <dt>Website build</dt>
+          <dd>{aud(quote.buildCents)}</dd>
+          <dt>Hosting, first year</dt>
+          <dd>{aud(quote.hostingCents)}</dd>
+          <dt className="pg-quote-total">Due today</dt>
+          <dd className="pg-quote-total">{aud(quote.buildCents + quote.hostingCents)}</dd>
+        </dl>
+      )}
+
+      {error && <p className="pg-error" role="alert">{error}</p>}
+      <button className="pg-btn" onClick={checkout} disabled={busy || !quote}>
+        <span>{busy ? "Opening checkout…" : "Go ahead with my website"}</span>
+      </button>
+      {expiredCta && (
+        <a className="pg-btn pg-btn-ghost" href={expiredCta.href}>
+          <span>{expiredCta.label}</span>
+        </a>
+      )}
+      <p className="pg-fine">
+        Secure checkout with Stripe.{quote ? ` Hosting renews at ${aud(quote.hostingCents)} per year.` : ""}
+      </p>
+    </div>
+  );
+}
+
+function Thanks({ clientName, onView }: { clientName: string; onView: () => void }) {
+  return (
+    <div className="pg-overlay" role="dialog" aria-modal="true" aria-labelledby="pg-title">
+      <div className="pg-card">
+        <div className="pg-brand">
+          <span className="pg-dot pg-dot-active" />
+          Confirmed · {clientName}
+        </div>
+        <div className="pg-pane">
+          <Sender />
+          <h2 id="pg-title" className="pg-h">You&rsquo;re all set. Thank you!</h2>
+          <p className="pg-p">Your payment went through and a receipt is on its way to your inbox. I&rsquo;ll be in touch shortly to get your new website started.</p>
+          <button className="pg-btn" onClick={onView}>
+            <span>View my home page</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const aud = (cents: number) =>
+  (cents / 100).toLocaleString("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 function Sender() {
   return (
@@ -587,6 +688,13 @@ const CSS = `
 }
 .pg-btn:hover{transform:translateY(-1px);background:#000}
 .pg-btn:disabled{opacity:.6;cursor:default}
+.pg-btn-ghost{margin-top:10px;background:rgba(22,22,26,.07);color:var(--pg-ink)}
+.pg-btn-ghost:hover{background:rgba(22,22,26,.12)}
+.pg-quote{width:100%;display:grid;grid-template-columns:1fr auto;gap:8px 16px;margin:0 0 20px;padding:14px 16px;border-radius:14px;background:rgba(255,255,255,.6);border:1px solid var(--pg-line);font-size:14px}
+.pg-quote dt{color:var(--pg-muted)}
+.pg-quote dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;color:var(--pg-ink)}
+.pg-quote .pg-quote-total{padding-top:8px;border-top:1px solid var(--pg-line);color:var(--pg-ink);font-weight:500}
+.pg-fine{margin:12px 0 0;width:100%;text-align:center;font-size:12px;color:var(--pg-muted)}
 .pg-btn:focus-visible,.pg-input:focus-visible,.pg-back:focus-visible,.pg-mini:focus-visible{outline:2px solid #16161a;outline-offset:3px}
 .pg-input{
   width:100%;height:50px;padding:0 20px;margin:0 0 12px;border-radius:999px;border:1px solid rgba(22,22,26,.16);
