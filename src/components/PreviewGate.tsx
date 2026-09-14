@@ -581,7 +581,7 @@ function StaffBar({
               }}
             >
               <input className="pg-input pg-input-sm" type="email" required placeholder="Client email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <input className="pg-input pg-input-sm" placeholder="Name for alerts" value={label} onChange={(e) => setLabel(e.target.value)} />
+              <input className="pg-input pg-input-sm" placeholder="Business name (as in CRM)" value={label} onChange={(e) => setLabel(e.target.value)} />
               <button className="pg-mini" type="submit">Save</button>
               <button className="pg-mini pg-mini-ghost" type="button" onClick={() => setEditing(false)}>Cancel</button>
             </form>
